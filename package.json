@@ -1,6 +1,6 @@
 {
   "name": "dsh-quant-assistant",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "把本地 DSH 一键转化为 A 股量化助手：因子检索、策略构建、可交易级回测、选股、仓位与止损、盘后自动增量同步，全部本地、零额外运行时。",
   "type": "module",
   "license": "MIT",
@@ -24,6 +24,8 @@
     "node": ">=22"
   },
   "scripts": {
+    "build:preset-patch": "node scripts/build-preset-patch.mjs",
+    "check:preset-patch": "node scripts/build-preset-patch.mjs --check",
     "verify:data": "node spike/verify-data.mjs",
     "test": "node --test tests/*.test.mjs",
     "smoke:p2": "node spike/p2-smoke.mjs",
@@ -46,7 +48,10 @@
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/quant-assistant.patch.yml"
+      ]
     },
     "client": {
       "platform": "web"

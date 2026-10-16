@@ -358,6 +358,19 @@
 
 > 分发过程记一笔（真实踩坑）：npm 2026 年的新策略下，`npm publish` 要求交互式 2FA 或带 bypass-2FA 的 granular token；而带 bypass 的 token 若选成新的 **"Read and write (stage only)"** 权限，则只能走 `npm stage publish` 暂存流程。新建包走暂存时会先公开占位版本 `0.0.0-stage`，正式版本进队列等维护者批准；本次 `npm stage approve`（CLI）对新建包暂存**恒返回 404**（原始端点即 `staged version not found`，而同一 id 在 `npm stage list/view` 里正常可见），最终按官方文档走 **npmjs.com → Staged Packages → Approve** 完成 2FA 批准。
 
+#### P6.5 手工上手测试抓出的两个真 bug（1.0.1 修复）
+
+1.0.0 发布后让用户亲手在 GUI 里测，**两条链路都是断的**——这暴露了自动验收的盲区：我验的是"文件写对了"，没验"用户真能选到、真能用"。
+
+| # | 现象 | 根因 | 修复 |
+|---|---|---|---|
+| 1 | 装完后设置里只有卡片，**会话里没有任何 `quant_*` 工具** | bundle 处于 **`enabled: false`**（已安装但未启用）→ `quant-host` 行不进组成；客户端半边照旧渲染，所以卡片可见、功能全无 | 用 `plugin_manager set_bundle enabled:true` 启用（**安装 ≠ 启用**，值得写进 README） |
+| 2 | 预设列表里**永远没有「量化助手」** | 插件往 `$DSH_HOME/.agent-presets/quant-assistant/` 物化目录，而 DSH 0.2.0 起该机制已废弃（自带文档原话：*"Nothing reads that directory any more"*），改为组成里的**声明行** `@deepseek-ai/dsh-agent-preset` | 新增 `presets/quant-assistant.patch.yml` 声明行，并在 `package.json` 的 `dsh.bundle.patch` 里列出；技能目录改为从**已安装的包**解析（`createRequire(baseUrl).resolve('dsh-quant-assistant/package.json')`），不再依赖已失效的 preset 目录 |
+
+**1.0.1 的守门措施**：声明行由 `scripts/build-preset-patch.mjs` 从 `agent.cordis.yml` **机械生成**（手抄两份必然漂移），并用 `tests/preset-patch.test.mjs` 四条断言守同步、守技能路径写法、守 `bundle.patch` 已列出、守声明行形状。单测 **133/133**。
+
+**教训（写给下一个版本）**：验收"能不能装"必须包含"装完能不能选到预设、能不能调到工具"，而不是"文件是否落盘"。Docker 验收当时只查了 `quant-host` 在组成里 + preset 目录已物化，**恰好漏掉"预设是否真的可被选择"**。
+
 #### 验收标准 1 的如实结论（不粉饰）
 
 第一次结果是 **148 天超过 0.2pp、最大 65.6pp，verdict: CHECK**。我没有把它归为"边界"，而是逐项归因。三层结论：

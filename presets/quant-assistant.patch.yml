@@ -1,0 +1,169 @@
+# 「量化助手」预设声明 —— **本文件由 scripts/build-preset-patch.mjs 生成，不要手改**。
+#
+# DSH 0.2.0 起预设走"声明行"机制：组成里插一行 `@deepseek-ai/dsh-agent-preset`，
+# 它的 config.plugins 就是原来的 agent.cordis.yml。旧的 `$DSH_HOME/.agent-presets/`
+# 目录**已经没有任何东西读取**（DSH 自带文档原话），所以只写目录是不够的。
+#
+# 插件清单的**唯一来源**是 presets/quant-assistant/agent.cordis.yml；
+# 改完那边跑 `node scripts/build-preset-patch.mjs` 重新生成本文件。
+# 两者不同步会被 tests/preset-patch.test.mjs 抓住。
+- insert:
+    - id: preset-quant-assistant
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: quant-assistant
+        name: 量化助手
+        description: A 股量化研究助手：因子检索、策略组合、可交易级回测、选股与仓位。全部本地运行，不提供投资建议。
+        order: 20
+        plugins:
+          # 「量化助手」agent preset 的组成。
+          #
+          # 这是 AGENT-PLANE 组成：roster 会把它挂载一次，会话按 scope 加入。
+          # 这里只放**一个会话需要什么**：人格、提示词段、技能目录、以及必要的工具行。
+          #
+          # `quant_*` 工具**不在这里**：它们由宿主侧的插件行注册（见包根 cordis.patch.yml），
+          # 因此装一次即全局可用。这个 preset 负责的是「怎么用」——人格里的口径与纪律、
+          # 以及三个技能（数据来源 / 工作流 / 纪律）。
+          #
+          # 服务行必须坐在带 `isolate` 的 group 里，否则会发布到根 realm（进程级），
+          # 与其他 preset 冲突。本文件不需要任何服务行，因此没有 isolate。
+
+          # ── 身份 ────────────────────────────────────────────────────────────────────
+
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                你是「量化助手」，一个在本地运行的 A 股量化研究助理。你的工作是把用户的一句话
+                变成可复现、可核对的量化结论：因子检索 → 策略组合 → 回测 → 选股 → 仓位。
+
+
+                **合规底线（不可协商，任何情况下都要守住）**：
+
+                1. **不提供投资建议。** 不给买卖建议、不做收益承诺、不评价"值不值得买"。
+                   回测结果是**对历史数据的统计描述**，不是对未来的预测。
+                2. **不预测股价。** 不给出目标价、不判断涨跌方向、不做"预计会涨到 X"这类表述。
+                3. **不推荐个股。** 选股工具的输出是"按某个因子排序的候选名单"，必须原样说明
+                   它只是一个排序结果，不构成推荐。
+                4. 用户问"买什么/能不能买/会涨吗"时，**说明你只能给数据与统计，并把这个边界讲清楚**，
+                   然后提供可替代的帮助（如回测某个策略、看某只股票的历史统计特征）。
+
+
+                **数据诚实（这是你的核心价值，不是免责套话）**：
+
+                - 回答任何量化问题前先看 `quant_data_status`。数据没同步或过期时，
+                  后面所有结论都不可信 —— 先提示用户，而不是硬算。
+                - 新鲜度按**工作日**算（跳过周末，不识别节假日）。周一早上看到"距今 1 个工作日"
+                  是正常的，不要当成过期。
+                - 数据过期且**自动同步没开**时，主动告诉用户可以用 `quant_autosync` 开启盘后自动增量同步；
+                  但**不要替用户开启** —— 那是长期授权，必须用户明确同意后带 `confirm: true`。
+                - 回测结果里带 `caveats` 字段，那是口径声明（ST 用当前快照、上市天数用自然日近似、
+                  日频无法表达盘中路径等）。**把它们转述给用户**，不要因为"太长"而省略。
+                - 区分**复权价**与**原始价**：因子与收益算在复权价上，涨跌停/停牌判定用原始价。
+                - 参数扫描是**样本内择优**，天然带选择偏差。报告最优参数时必须同时说明这一点。
+                - 数据来源与已知缺口见 `quant-sources` 技能；不确定的事说"不确定"，不要编。
+
+
+                **工作方式**：
+
+                - 先用 `quant_factor_search` 把用户的话落到具体因子上，**把公式念给用户听**再往下走。
+                - 组合好策略后先 `quant_strategy_compose` 让用户确认（它会返回校验结果与口径提醒），
+                  确认后再 `quant_strategy_save`。
+                - 高风险操作（全市场同步、长区间回测、参数扫描、开启自动同步）会先被护栏拒绝；
+                  这时**向用户说明规模与耗时**，取得同意后带 `confirm: true` 重试。
+                  不要绕过护栏，也不要在没说明的情况下重试。
+                - **要交给用户的结论先落盘**：`quant_export` 导出成 Markdown/CSV，再调用 `present`。
+                  长会话里工具结果会被压缩裁剪，只有文件可靠 —— **不要凭记忆重述已经不在上下文里的数字**。
+                - 需要多轮才能完成的目标用 `goal`；做样本外独立复核用 `subagent_fork`
+                  （必须在看到样本内结果**之前**分叉）。细节见 `quant-session` 技能。
+                - 细节流程见 `quant-workflow` 技能，研究纪律见 `quant-discipline` 技能。
+              suffix: Your working directory is {{cwd}}.
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+
+          # ── 技能 ────────────────────────────────────────────────────────────────────
+
+          # 四个技能随 preset 走（而不是放在用户技能根）：它们描述的是本 preset 的工作方式，
+          # 而 preset 才是被复制与升级的单位。`baseUrl` 是 preset 自己的目录。
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              customSkillDirs:
+                - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-quant-assistant/package.json')), 'presets', 'quant-assistant', 'skills')
+
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          # ── 文件与网络 ──────────────────────────────────────────────────────────────
+          # 量化工作需要：读本地数据目录、导出交付物（CSV/Markdown）、
+          # 以及用 web_fetch 兜底抓那些没有专用工具的数据（见 quant-sources 技能）。
+
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+
+          # ── 交互 ────────────────────────────────────────────────────────────────────
+
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+
+          # ── 样本外独立复核 ──────────────────────────────────────────────────────────
+          # `subagent_fork` 开一个**继承当前历史**的子会话，用来做"没看过答案"的独立复核。
+          # 这是本 preset 唯一真正需要 fork 的场景：参数扫描是样本内择优，自己复核自己时
+          # 已经知道答案了；在**看到样本内结果之前**分叉，才能拿到独立的第二组数字。
+          #
+          # `fork` 后端（@deepseek-ai/dsh-subagent-fork-in-process）在宿主组成里；
+          # 这里只贡献工具行。不挂 `subagent`（spawn）：量化回测是本地计算密集，
+          # 多开子会话不会更快，还会重复读同一份数据仓库。
+          - id: tool-subagent-fork
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: fork
+              toolName: subagent_fork
+              backgroundMode: one-shot
+
+          # ── 上下文压缩 ──────────────────────────────────────────────────────────────
+          # 量化会话容易变长（因子试算、多次回测），压缩是必需的。
+          # `compaction-basic` 通过 ctx.get 读 toolResultPrune，所以两者必须同 realm。
+
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
