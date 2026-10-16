@@ -354,6 +354,9 @@
 | 2 行为对账（vs AIFUND5/qlib） | ✅ **复跑全绿**：Rung 0 11/12 只只差常数；Rung 1 语义残差 ~1e-8；Rung 3 持仓一致 646/659 = 98.0%，对齐口径波动 32.00% vs 32.17%、年化 13.26% vs 14.76% |
 | 3 端到端场景（对话） | ✅ **24/24 通过**（隔离实例 + 真实凭证拷贝；工具面等价，LLM 半边由真实浏览器技能卡验证） |
 | 4 干净安装/卸载 | ✅ **Docker 双版本通过（20/20 与 14 通过/0 失败/3 跳过）**：0.2.0-rc.2 全绿；0.1.5-rc.1 宿主自身装不起来（npm 发布的 dsh-sandbox-local 无可解析版本），依赖启动的检查降级为跳过。并抓出 **DSH 发布事故** 与 **关闭即删 preset** 两个 bug；卸载语义按"plugin remove 不启动 DSH"的平台限制如实验收 |
+| 5 公开分发 | ✅ **已发布到 npm**：[`dsh-quant-assistant@1.0.0`](https://www.npmjs.com/package/dsh-quant-assistant)，`latest` 指向 1.0.0，42 个文件 / 446 KB / shasum `acd559fa`（本地 `npm pack` 复现结果逐字节一致）。安装：`dsh plugin --profile web add dsh-quant-assistant`。源码：[stone-sea-gold/btDSH](https://github.com/stone-sea-gold/btDSH) tag `v1.0.0` |
+
+> 分发过程记一笔（真实踩坑）：npm 2026 年的新策略下，`npm publish` 要求交互式 2FA 或带 bypass-2FA 的 granular token；而带 bypass 的 token 若选成新的 **"Read and write (stage only)"** 权限，则只能走 `npm stage publish` 暂存流程。新建包走暂存时会先公开占位版本 `0.0.0-stage`，正式版本进队列等维护者批准；本次 `npm stage approve`（CLI）对新建包暂存**恒返回 404**（原始端点即 `staged version not found`，而同一 id 在 `npm stage list/view` 里正常可见），最终按官方文档走 **npmjs.com → Staged Packages → Approve** 完成 2FA 批准。
 
 #### 验收标准 1 的如实结论（不粉饰）
 
