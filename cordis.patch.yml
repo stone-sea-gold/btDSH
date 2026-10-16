@@ -1,0 +1,53 @@
+# dsh-quant-assistant 的 bundle patch —— 安装时唯一被执行的钩子。
+#
+# 语义（P0 实测）：
+#   - `- id: <已有行>`  = 覆盖该行整个 config，行不存在会报 `patch: entry "x" not found`
+#   - `- insert: [...]` = 插入新行（唯一合法形态）
+# 因此本插件只 insert 自己的行，**绝不触碰共享行**（agent-presets / tools / webServer /
+# agent-loop）。用户 profile 里的 cordis.patch.yml 永远在本层之后生效，用户说了算。
+#
+# 这一行做五件事（都在 lib/index.js 的 apply 里）：
+#   1. 注册 31 个 quant_* 工具到 tools 注册表
+#   2. 安装审批护栏（全市场同步 / 长区间回测 / 参数扫描 / 删库 / 开启自动同步）
+#   3. 把包内的「量化助手」preset 物化到 $DSH_HOME/.agent-presets/quant-assistant/
+#   4. 惰性打开本地数据仓库（第一次真正用到数据时才建库）
+#   5. 盘后定时增量同步（默认关闭；见下面 autoSync 的说明）
+- insert:
+    - id: quant-host
+      name: 'dsh-quant-assistant'
+      config:
+        # preset 目录名（物化到 $DSH_HOME/.agent-presets/<presetId>/）
+        presetId: quant-assistant
+        # 数据目录；null = $DSH_QUANT_DATA_DIR 或 $DSH_HOME/quant/
+        dataDir: null
+        # 关掉护栏（不推荐；只在明确知道自己在做什么时用）
+        guards: true
+        # 关掉 preset 物化（例如你已经手工维护了一份）
+        materializePreset: true
+        # 窗口函数临时表落点：memory（默认，快）/ file（省内存，需可写临时目录）
+        tempStore: memory
+        # ── 盘后定时增量同步 ────────────────────────────────────────────────
+        # **本包默认不写这一项**：自动同步关闭，由用户在会话里用 quant_autosync 开启
+        # （开启是一次长期授权，需要用户明确同意）。公开分发的包应当保持这个默认。
+        #
+        # 部署方需要时可以在这里覆盖：
+        #   autoSync: false              强制关闭，用户在会话里也开不起来
+        #   autoSync: {enabled: true}    部署层直接开启，首次加载时固化进库并记录授权来源
+        #
+        # 各字段含义（都会经过夹取与校验，非法值不会让插件起不来）：
+        #   atHour / atMinute  每天的执行时刻（本地时间），默认 18:30
+        #   codes              只同步这些股票；null = 库里已同步的全部
+        #   maxCodes           单次运行的硬上限，默认 3000（超限跳过并记录，不硬跑）
+        #   retryDelayMin      没拿到新数据/失败后的重试间隔，默认 60 分钟
+        #   maxRetriesPerDay   每天最多重试几次，默认 1（不无限重试）
+        #   overlapDays        增量起点往前留的重叠，默认 10 天（兜住源站迟到的修正）
+        #   probeCount         先探几只判断"今天有没有新数据"，默认 3
+        #
+        # 注意：定时器来自宿主组成的 timer 服务。headless profile（patchReload: startup）
+        # 不会自动挂载它，此时定时不会触发，但手动补跑与状态读写照常可用——
+        # 插件会如实报告，不会假装会跑。
+        #
+        # autoSync:
+        #   enabled: true
+        #   atHour: 18
+        #   atMinute: 30

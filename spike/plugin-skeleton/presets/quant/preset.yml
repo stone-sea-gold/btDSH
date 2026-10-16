@@ -1,0 +1,3 @@
+name: 量化助手（P0 骨架）
+description: P0-G4 spike 用的最小 preset，验证「插件物化 preset 到用户根」这条投递路径。
+order: 90

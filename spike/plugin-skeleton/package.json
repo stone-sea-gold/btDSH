@@ -1,0 +1,22 @@
+{
+  "name": "@dsh-spike/quant-skeleton",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "P0-G4 spike: 最小 dsh.bundle + dsh.client + preset 骨架，用于验证安装/卸载链路",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib", "presets", "cordis.patch.yml"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}

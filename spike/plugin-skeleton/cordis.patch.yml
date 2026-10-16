@@ -1,0 +1,12 @@
+# P0-G4 spike 的 bundle patch。
+#
+# 关键语义（实测得来）：
+#   - `- id: <已有行>`  = 覆盖该行的整个 config；行不存在会报 `patch: entry "x" not found`
+#   - `- insert: [...]` = 插入新行（dsh-base 自身即用此形式）
+# 因此第三方插件包**只能 insert 自己的行**，天然满足「不碰共享行」的礼仪要求。
+- insert:
+    - id: quant-skeleton
+      name: '@dsh-spike/quant-skeleton'
+      config:
+        presetId: quant-spike
+        greeting: 'dsh-quant P0 skeleton'

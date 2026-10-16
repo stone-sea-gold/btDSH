@@ -1,0 +1,68 @@
+{
+  "name": "dsh-quant-assistant",
+  "version": "1.0.0",
+  "description": "把本地 DSH 一键转化为 A 股量化助手：因子检索、策略构建、可交易级回测、选股、仓位与止损、盘后自动增量同步，全部本地、零额外运行时。",
+  "type": "module",
+  "license": "MIT",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "presets",
+    "data/factors.json",
+    "data/factor-events.json.gz",
+    "data/factor-events.meta.json",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "verify:data": "node spike/verify-data.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "smoke:p2": "node spike/p2-smoke.mjs",
+    "smoke:p2b": "node spike/p2b-smoke.mjs",
+    "smoke:dsl": "node spike/dsl-smoke.mjs",
+    "verify:factors": "node spike/verify-factors.mjs",
+    "perf": "node spike/p2-perf.mjs",
+    "oracle": "python3 spike/oracle-baostock.py",
+    "oracle:factors": "python3 spike/oracle-factors.py spike/out/p1-verify.db spike/out/factor-oracle.json 600519 000001 300750",
+    "gate:qlib": "python3 spike/gate-qlib.py",
+    "gate:rung0": "node spike/gate-compare.mjs rung0",
+    "gate:rung1": "node spike/gate-compare.mjs rung1",
+    "gate:rung3cmp": "node spike/gate-compare.mjs rung3cmp",
+    "smoke:tools": "node spike/tools-smoke.mjs",
+    "smoke:plugin": "node spike/plugin-apply-smoke.mjs",
+    "smoke:client": "node --test tests/client.test.mjs",
+    "smoke:autosync": "node --test tests/autosync.test.mjs",
+    "smoke:export": "node --test tests/export.test.mjs",
+    "smoke:realctx": "node spike/plugin-real-ctx-smoke.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "quant",
+    "a-share",
+    "backtest"
+  ],
+  "dependencies": {},
+  "author": "dsh-quant-assistant contributors",
+  "homepage": "https://www.npmjs.com/package/dsh-quant-assistant",
+  "publishConfig": {
+    "access": "public"
+  }
+}

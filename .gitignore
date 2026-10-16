@@ -1,0 +1,21 @@
+# 依赖与包管理器缓存
+node_modules/
+.pnpm-store/
+
+# 验证与压测产物（可再生产，不该进版本库）
+spike/out/
+spike/tmp-dsh-home/
+
+# 浏览器验证脚手架的可丢弃依赖（见 spike/out/browser/README.md）
+.chrome/
+libs/
+
+# 打包产物
+*.tgz
+
+# 编辑器/系统
+.DS_Store
+*.log
+.npm-cache/
+CLAUDE.md:Zone.Identifier
+spike/out/exports/
