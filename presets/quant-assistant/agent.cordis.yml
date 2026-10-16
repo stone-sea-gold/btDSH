@@ -69,7 +69,8 @@
 # ── 技能 ────────────────────────────────────────────────────────────────────
 
 # 四个技能随 preset 走（而不是放在用户技能根）：它们描述的是本 preset 的工作方式，
-# 而 preset 才是被复制与升级的单位。`baseUrl` 是 preset 自己的目录。
+# 而 preset 才是被复制与升级的单位。技能目录**从已安装的包解析**（见下面的 !!js 表达式）：
+# DSH 0.2.0 起预设不再是目录，`baseUrl` 已不指向任何存在的东西。
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
@@ -88,6 +89,10 @@
 
 - id: tool-fs-search
   name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    # 过上限的 glob 结果是否跨顶层目录抽样：**必填**（DSH 刻意不留默认，要求部署方显式选）。
+    # 官方 standard/ptc/cordis 三个预设都是 false（取修改时间头部，不抽样）。
+    sampleOverCapGlobResults: false
 
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
