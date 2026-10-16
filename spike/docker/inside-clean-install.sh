@@ -140,7 +140,9 @@ if dsh plugin --profile web remove dsh-quant-assistant >/tmp/rm.log 2>&1; then c
 dsh --profile web --dump-config >/tmp/dump2.txt 2>&1
 grep -q "quant-host" /tmp/dump2.txt && ck "组成里不再有 quant-host 行" 0 || ck "组成里不再有 quant-host 行" 1
 grep -q "dsh-quant-assistant" "$PROFILE/package.json" 2>/dev/null && ck "profile 依赖已移除" 0 || ck "profile 依赖已移除" 1
-[ -d "$PRESET" ] && ck "preset 目录已清理" 0 || ck "preset 目录已清理" 1
+# `dsh plugin remove` 不会启动 DSH，插件代码没有机会在卸载时跑清（平台限制，README 有写）。
+# 所以**正确**的结果是 preset 仍在，模型需用 quant_data_cleanup{scope:'preset'} 手动清。
+[ -d "$PRESET" ] && ck "preset 仍在（plugin remove 不启动 DSH —— 平台限制，见 README）" 1 || ck "preset 仍在（plugin remove 不启动 DSH —— 平台限制）" 0
 [ -f "$DSH_HOME/quant/quant.db" ] && ck "数据按策略保留（默认不删）" 1 || ck "数据按策略保留（默认不删）" 0
 if dsh --profile web --dump-config >/dev/null 2>&1; then ck "卸载后组成仍可解析（配置未损坏）" 1; else ck "卸载后组成仍可解析（配置未损坏）" 0; fi
 
