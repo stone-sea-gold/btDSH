@@ -19,3 +19,4 @@ libs/
 .npm-cache/
 CLAUDE.md:Zone.Identifier
 spike/out/exports/
+quant-exports/
