@@ -1,6 +1,6 @@
 {
   "name": "dsh-quant-assistant",
-  "version": "1.0.1",
+  "version": "1.0.11",
   "description": "把本地 DSH 一键转化为 A 股量化助手：因子检索、策略构建、可交易级回测、选股、仓位与止损、盘后自动增量同步，全部本地、零额外运行时。",
   "type": "module",
   "license": "MIT",
