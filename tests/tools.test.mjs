@@ -4,6 +4,10 @@
  * 这里验的是**模型看不到但会直接导致注册失败/渲染崩溃**的东西：
  *   - DSH 的 JSON Schema 只支持一个**子集**（`format`/`minimum`/`pattern` 会被拒绝）。
  *     30 个工具手写 schema，靠人眼保证不越界是不现实的，必须机器检查。
+ *   - DSH 宿主会拿 output.schema 校验工具的**实际返回值**，不过就抛
+ *     INVALID_TOOL_OUTPUT —— 失败信封 `{ok:false, error}` 也要能过校验，
+ *     否则每次预期失败都变成宿主级硬错误（实测踩过：quant_factor_preview
+ *     空库时模型只看到 `missing required property "value.formula"`）。
  *   - `output.render` 必须存在、必须返回 `[{type:'text',text}]`。
  *   - 工具名唯一、带 `quant_` 前缀、不占用保留名 `run_code`。
  *   - 审批护栏的真值表。
@@ -78,6 +82,63 @@ function validateSchema(node, path = 'schema', seen = new Set()) {
   return bad
 }
 
+// ── 值校验：复刻 DSH dsh-tools 对**返回值**的校验语义 ────────────────────────
+// 项目零依赖，不能直接 import @deepseek-ai/dsh-tools；这里按它的 json-schema.js
+// 复刻本项目 schema 实际用到的子集（type/oneOf/const/properties/required/
+// additionalProperties/items/enum）。报错消息也按宿主格式生成，方便逐字对照。
+// 真校验器的对照见 spike/repro-invalid-output.mjs。
+function checkScalar(schema, value, path) {
+  if (Object.hasOwn(schema, 'const') && value !== schema.const) return [`"${path}" must be ${JSON.stringify(schema.const)}`]
+  if (schema.enum !== undefined && !schema.enum.includes(value)) return [`"${path}" must be one of ${JSON.stringify(schema.enum)}`]
+  return []
+}
+
+function validateValue(schema, value, path = 'value') {
+  if (Object.hasOwn(schema, 'oneOf')) {
+    const matched = schema.oneOf.filter((branch) => validateValue(branch, value, path).length === 0).length
+    return matched === 1 ? [] : [`"${path}" must match exactly one oneOf branch (matched ${matched})`]
+  }
+  switch (schema.type) {
+    case undefined:
+      return []
+    case 'object': {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return [`"${path}" must be an object`]
+      const bad = []
+      for (const k of schema.required ?? []) {
+        if (!Object.hasOwn(value, k) || value[k] === undefined) bad.push(`missing required property "${path}.${k}"`)
+      }
+      for (const [k, sub] of Object.entries(schema.properties ?? {})) {
+        if (!Object.hasOwn(value, k) || value[k] === undefined) continue
+        bad.push(...validateValue(sub, value[k], `${path}.${k}`))
+      }
+      if (schema.additionalProperties === false) {
+        for (const k of Object.keys(value)) {
+          if (!Object.hasOwn(schema.properties ?? {}, k)) bad.push(`"${path}.${k}" is not a declared property (additionalProperties: false)`)
+        }
+      }
+      return bad
+    }
+    case 'array': {
+      if (!Array.isArray(value)) return [`"${path}" must be an array`]
+      return schema.items === undefined ? [] : value.flatMap((v, i) => validateValue(schema.items, v, `${path}[${i}]`))
+    }
+    case 'string':
+      return typeof value === 'string' ? checkScalar(schema, value, path) : [`"${path}" must be a string`]
+    case 'number':
+      return typeof value === 'number' && Number.isFinite(value)
+        ? checkScalar(schema, value, path)
+        : [`"${path}" must be a finite JSON number`]
+    case 'integer':
+      return Number.isInteger(value) ? checkScalar(schema, value, path) : [`"${path}" must be an integer`]
+    case 'boolean':
+      return typeof value === 'boolean' ? checkScalar(schema, value, path) : [`"${path}" must be a boolean`]
+    case 'null':
+      return value === null ? checkScalar(schema, value, path) : [`"${path}" must be null`]
+    default:
+      return []
+  }
+}
+
 /** 造一个带数据的临时运行时（复用 P1 验证库） */
 function makeRuntime() {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-quant-test-'))
@@ -116,6 +177,69 @@ test('工具面：每个 schema 都落在 DSH 支持的 JSON Schema 子集内', 
     assert.deepEqual(pBad, [], `${t.name} 的 parameters 越界：${pBad.join('; ')}`)
     const oBad = validateSchema(t.output.schema, `${t.name}.output.schema`)
     assert.deepEqual(oBad, [], `${t.name} 的 output.schema 越界：${oBad.join('; ')}`)
+  }
+  cleanup()
+})
+
+test('工具面：失败信封必须能过 output.schema 校验（否则每次预期失败都变成宿主级 INVALID_TOOL_OUTPUT）', () => {
+  const { runtime, cleanup } = makeRuntime()
+  const envelope = { ok: false, error: { code: 'X', message: '测试失败' } }
+  for (const t of allTools(runtime)) {
+    const bad = validateValue(t.output.schema, envelope)
+    assert.deepEqual(bad, [], `${t.name} 的 output.schema 拒绝失败信封：${bad.join('; ')}`)
+  }
+  cleanup()
+})
+
+test('工具面：回归 —— quant_trading_calendar 空仓库 / quant_factor_preview 空库的真实返回值必须合法', () => {
+  const { runtime, cleanup } = makeRuntime()
+  const byName = Object.fromEntries(allTools(runtime).map((t) => [t.name, t]))
+
+  // 宿主报过："value.first" must be an integer; "value.last" must be an integer
+  const cal = byName.quant_trading_calendar
+  assert.deepEqual(
+    validateValue(cal.output.schema, { ok: true, count: 0, dates: [], first: null, last: null }), [],
+    'quant_trading_calendar 空仓库返回值必须合法',
+  )
+
+  // 宿主报过：missing required property "value.formula" / "value.coverage" / "value.top"
+  const preview = byName.quant_factor_preview
+  assert.deepEqual(
+    validateValue(preview.output.schema, { ok: false, error: { code: 'NO_DATA', message: '仓库里没有行情数据，先跑 quant_data_sync' } }), [],
+    'quant_factor_preview 的 NO_DATA 失败信封必须合法',
+  )
+  assert.deepEqual(
+    validateValue(preview.output.schema, {
+      ok: true, formula: '$close / Ref($close, 20) - 1', date: 20240101,
+      layers: 1, lookback: 20, coverage: 0.99, distinct: 100, stocks: 100, top: [],
+    }), [],
+    'quant_factor_preview 成功载荷必须合法',
+  )
+  // 保护意义保留：成功值缺 required 业务字段仍要被拦（0 个分支匹配）
+  const leaked = validateValue(preview.output.schema, { ok: true, formula: 'f', top: [] })
+  assert.ok(leaked.length > 0, `成功值缺 coverage 必须被拦，实际：${JSON.stringify(leaked)}`)
+  cleanup()
+})
+
+test('工具面：声明了类型的字段运行时返回 null 必须显式 nullable（逐点回归）', () => {
+  const { runtime, cleanup } = makeRuntime()
+  const byName = Object.fromEntries(allTools(runtime).map((t) => [t.name, t]))
+
+  // 样例值直接摘自各工具 execute 的真实返回（空仓库 / 默认参数路径）
+  const cases = [
+    ['quant_data_status', {
+      ok: true, ready: false, stale: true, codes: 0, bars: 0, adjEvents: 0, range: [null, null],
+      byStatus: {}, pendingCount: 0, uncovered: 0, dir: '/tmp/x',
+      freshness: { today: null, lastDate: null, calendarDays: null, weekdays: null, stale: true, basis: 'weekdays' },
+      autoSync: { enabled: false, configured: false },
+    }],
+    ['quant_factor_create', { ok: true, id: 'my_x', version: 1, layers: 2, fields: ['$close'], functions: ['Ref'], materialized: null }],
+    ['quant_portfolio_status', { ok: true, asOf: null, count: 0, marketValue: 0, costValue: 0, positions: [] }],
+    ['quant_autosync', { ok: true, state: { enabled: false }, nextDueAt: null, nextDueText: null, timer: false }],
+  ]
+  for (const [name, value] of cases) {
+    const bad = validateValue(byName[name].output.schema, value)
+    assert.deepEqual(bad, [], `${name} 的真实返回值必须合法：${bad.join('; ')}`)
   }
   cleanup()
 })
