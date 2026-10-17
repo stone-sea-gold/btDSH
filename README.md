@@ -9,9 +9,28 @@
 
 ## 安装
 
+npm 渠道（发布过的稳定版）：
+
 ```bash
 dsh plugin --profile web add dsh-quant-assistant
 ```
+
+GitHub 渠道（npm 未发版的最新修复，跟随 `main` 分支）：
+
+```bash
+dsh plugin --profile web add github:stone-sea-gold/btDSH
+```
+
+两种渠道的插件名都是 `dsh-quant-assistant`（启用/卸载/设置里找的名字不变）。
+GitHub 安装**只会装到你 add 那一刻的最新 commit**：之后仓库更新不会自动跟进，
+重新执行一次上面的 `add` 命令即可升级。要钉住某个版本，用 tag：
+
+```bash
+dsh plugin --profile web add github:stone-sea-gold/btDSH#v1.0.11
+```
+
+> 已经从 npm 装过、想切到 GitHub 最新版的用户，直接用上面的 git spec 重新 `add` 一次即可；
+> npm 上的旧版本不会自动变成 GitHub 版。
 
 装完**做两件事，然后重启 DSH**：
 
