@@ -618,6 +618,32 @@ fork 的价值不在并行，而在**独立性** —— 它继承历史到分叉
 - **端到端不变式 6/6**（`spike/p2-smoke.mjs`）：NAV 恒等、无同日买卖、整手、无超卖、无 NaN、印花税仅卖出。
 - 基准未接指数数据时使用**区间内等权买入持有代理**，并在结果的 `caveats` 中显式声明。
 
+### 8.2 看板数据流（v1.1 新增）
+
+回测结果有三处消费者，**算法只留一份**（`lib/backtest/analyze.mjs`）：
+
+```
+              ┌─────────────────────────────┐
+ 回测记录(DB) │ lib/dashboard/model.mjs      │  ← 共享：analyze.mjs（分年度/回撤段/回撤序列/成本）
+              │ 产出「看板模型 JSON」         │
+              └──────────────┬──────────────┘
+                             │
+        ┌────────────────────┴────────────────────┐
+   Phase 1                                    Phase 2（未实现）
+   lib/dashboard/render.mjs                    同一份 JSON 由
+   → 单文件 HTML（内联 ECharts + 客户端脚本）   GET /quant/dashboard/:id 返回
+                             │
+                    lib/dashboard/client-runtime.js
+                    （loadModel 三源适配器：注入 / 内联 / fetch）
+```
+
+**为什么先抽模型再画图**：Phase 2 的活数据面板只换"数据从哪来"，栏目与视觉不动。
+契约由三条硬约束保证（`tests/dashboard.test.mjs` + `tests/dashboard-render.test.mjs`）：
+渲染器只吃模型（无 fs/store/import）、`runs` 永远是数组、模型不含任何样式信息。
+
+**持久化的小改动**：`caveats`、`skipped`(不可交易拒绝计数)、`rebalances` 随 `metrics` JSON 一起归档
+（无 schema 迁移；旧记录缺失时由模型按配置确定性重建）。
+
 ## 9. 合规
 
 - preset 人格写死边界：**不构成投资建议、不预测股价、不荐股**；必须披露数据来源与局限（幸存者偏差已消除，但回测 ≠ 未来）。

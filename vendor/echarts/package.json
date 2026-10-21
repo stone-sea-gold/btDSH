@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "commonjs",
+  "description": "vendored Apache ECharts UMD 产物：仅供内联进看板 HTML 与测试加载，不是可发布的包"
+}
