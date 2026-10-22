@@ -29,13 +29,12 @@ import mod, { apply, setup, name, inject, isUninstalled } from '../lib/index.js'
 
 /** 最小伪 ctx：够 setup 跑完就行 */
 function makeCtx() {
-  const registered = [], guards = [], effects = []
+  const registered = [], effects = []
   return {
-    registered, guards, effects,
+    registered, effects,
     ctx: {
       get: (n) => (n === 'tools' ? {
         register: (d) => { registered.push(d.name); return () => {} },
-        guard: (g) => { guards.push(g); return () => {} },
       } : undefined),
       effect: (fn, label) => { effects.push(label); fn() },
       logger: { info: () => {} },
@@ -62,17 +61,13 @@ test('插件入口：apply 必须返回 void（返回对象会被 Cordis 当成�
 test('插件入口：setup 返回诊断报告（apply 的返回值不能用来传报告）', () => {
   const h = makeHome()
   try {
-    const { ctx, registered, guards, effects } = makeCtx()
+    const { ctx, registered, effects } = makeCtx()
     const report = setup(ctx, { dataDir: join(h.home, 'data'), presetId: 'quant-entry-test', materializePreset: false })
     assert.equal(typeof report, 'object')
     assert.equal(report.tools.count, 31, `工具数应为 31，实际 ${report.tools.count}`)
     assert.equal(report.tools.failed.length, 0)
     assert.equal(registered.length, 31)
-    assert.equal(guards.length, 1)
-    assert.equal(report.guards.ok, true)
-    assert.equal(report.guards.rules.length, 5, '5 条护栏规则：同步/回测/扫参/删库/开启自动同步')
     assert.ok(effects.some((l) => l.includes('tool')))
-    assert.ok(effects.some((l) => l.includes('guard')))
     assert.ok(effects.some((l) => l.includes('store')))
     assert.ok(effects.some((l) => l.includes('autosync')), '自动同步也要归还 effect')
     assert.equal(report.autoSync.enabled, false, '默认必须是关闭')

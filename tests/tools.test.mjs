@@ -10,7 +10,6 @@
  *     空库时模型只看到 `missing required property "value.formula"`）。
  *   - `output.render` 必须存在、必须返回 `[{type:'text',text}]`。
  *   - 工具名唯一、带 `quant_` 前缀、不占用保留名 `run_code`。
- *   - 审批护栏的真值表。
  *
  * 运行: node --test tests/*.test.mjs
  */
@@ -28,7 +27,6 @@ import { dataTools } from '../lib/tools/data.mjs'
 import { portfolioTools } from '../lib/tools/portfolio.mjs'
 import { autosyncTools } from '../lib/tools/autosync.mjs'
 import { exportTools } from '../lib/tools/export.mjs'
-import { GUARD_RULES } from '../lib/approval.mjs'
 import { estimateSync } from '../lib/data/sync.mjs'
 import { openStore } from '../lib/data/store.mjs'
 
@@ -270,57 +268,6 @@ test('工具面：execute 抛异常时被包成失败信封，而不是把异常
   cleanup()
 })
 
-test('审批护栏：真值表', () => {
-  const sync = GUARD_RULES.quant_data_sync
-  assert.equal(sync({ scope: 'codes' }), null, '代码表是秒级的，不拦')
-  assert.equal(sync({ scope: 'all', estimateOnly: true }), null, '只估算不落地，不拦')
-  assert.equal(sync({ scope: 'bars', codes: new Array(50).fill('600000') }), null, '小批量不拦')
-  assert.equal(typeof sync({ scope: 'all' }), 'string', '全市场要拦')
-  assert.equal(typeof sync({ scope: 'bars', codes: new Array(500).fill('600000') }), 'string', '大批量要拦')
-
-  const bt = GUARD_RULES.quant_backtest_run
-  assert.equal(bt({ config: { start: 20240101, end: 20260923 } }), null, '短区间不拦')
-  assert.equal(typeof bt({ config: { start: 20150101, end: 20260923 } }), 'string', '长区间要拦')
-  assert.equal(bt({ config: { start: 20150101, end: 20260923 }, confirm: true }), null, '确认后放行')
-  assert.equal(bt({}), null, '缺参数交给工具自己报错')
-
-  const opt = GUARD_RULES.quant_optimize_parameters
-  assert.equal(opt({ space: { topK: [1, 2, 3] } }), null, '3 组不拦')
-  // 6 × 3 × 2 × 3 = 108 组 > 100
-  const bigSpace = { topK: [1, 2, 3, 4, 5, 6], rebalance: ['a', 'b', 'c'], weight: ['x', 'y'], buffer: [1, 2, 3] }
-  assert.equal(typeof opt({ space: bigSpace }), 'string', '108 组要拦')
-  assert.equal(opt({ space: bigSpace, confirm: true }), null, '确认后放行')
-
-  const clean = GUARD_RULES.quant_data_cleanup
-  assert.equal(clean({ scope: 'panels' }), null, '清面板不拦')
-  assert.equal(typeof clean({ scope: 'all' }), 'string', '删库要拦')
-  assert.equal(clean({ scope: 'all', confirm: true }), null, '确认后放行')
-
-  const auto = GUARD_RULES.quant_autosync
-  assert.equal(auto({ action: 'get' }), null, '看状态不拦')
-  assert.equal(auto({ action: 'run_now' }), null, '手动补跑不拦（用的还是同一条增量路径与硬上限）')
-  assert.equal(auto({ action: 'disable' }), null, '关闭不拦')
-  assert.equal(typeof auto({ action: 'enable' }), 'string', '开启自动同步是长期授权，必须拦一次')
-  assert.equal(auto({ action: 'enable', confirm: true }), null, '确认后放行')
-  assert.equal(auto({}), null, '缺参数按默认 get 处理，不拦')
-
-  assert.equal(GUARD_RULES.quant_factor_list, undefined, '普通工具没有护栏规则')
-})
-
-test('护栏拒绝理由必须包含"怎么继续"（不能只说不行）', () => {
-  for (const [name, rule] of Object.entries(GUARD_RULES)) {
-    const samples = name === 'quant_data_sync' ? [{ scope: 'all' }]
-      : name === 'quant_backtest_run' ? [{ config: { start: 20100101, end: 20260101 } }]
-        : name === 'quant_optimize_parameters' ? [{ space: { topK: new Array(200).fill(1) } }]
-          : name === 'quant_autosync' ? [{ action: 'enable' }]
-            : [{ scope: 'all' }]
-    for (const s of samples) {
-      const reason = rule(s)
-      assert.equal(typeof reason, 'string', `${name} 应当拒绝`)
-      assert.ok(/confirm=true|estimateOnly/.test(reason), `${name} 的拒绝理由必须给出继续的路径，实际：${reason}`)
-    }
-  }
-})
 
 test('同步估算：规模与审批标记随股票数增长', () => {
   const store = openStore(':memory:')

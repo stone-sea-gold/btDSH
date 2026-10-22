@@ -61,11 +61,10 @@ const root = new Context()
 root.plugin(TimerService)
 
 // tools 服务用真的 Service 子类提供：这样 `inject: ['tools']` 的延迟激活路径是真的
-const registered = [], guards = []
+const registered = []
 class FakeTools extends Service {
   constructor(ctx) { super(ctx, 'tools') }
   register(def) { registered.push(def.name); return () => { const i = registered.indexOf(def.name); if (i >= 0) registered.splice(i, 1) } }
-  guard(fn) { guards.push(fn); return () => { const i = guards.indexOf(fn); if (i >= 0) guards.splice(i, 1) } }
 }
 root.plugin(FakeTools)
 
@@ -86,7 +85,6 @@ await new Promise((r) => setTimeout(r, 50))
 
 check('apply 在真实 ctx 上跑通', report.tools?.count === 31, `count=${report.tools?.count} failed=${report.tools?.failed?.length}`)
 check('31 个工具注册进真实 tools 服务', registered.length === 31, `实际 ${registered.length}`)
-check('装了 1 个护栏', guards.length === 1)
 check('inject 只声明 tools', Array.isArray(inject) && inject.length === 1 && inject[0] === 'tools', JSON.stringify(inject))
 check('插件名正确', name === 'quant-assistant')
 check('真实 ctx 下也保持惰性（不建库）', !existsSync(join(DATA, 'quant.db')))
@@ -95,7 +93,6 @@ check('报告里 timer 为 true（真实服务被认出来了）', report.autoSy
 check('report 可被序列化（live 控制器不可枚举）', (() => { try { JSON.stringify(report); return true } catch { return false } })())
 await fiber.dispose()
 check('卸载后工具被注销（fiber effect 归还）', registered.length === 0, `剩余 ${registered.length}`)
-check('卸载后护栏被注销', guards.length === 0, `剩余 ${guards.length}`)
 
 // ── 3) 真实定时器：补跑一次 ─────────────────────────────────────────────────
 // 先手工造一个"有仓库 + 自动同步开着 + 上次该跑没跑"的现场
@@ -115,11 +112,10 @@ rt.close()
 // 换一个 Context 重新装载，模拟"重启"（上一个 Context 里的排程已经没了）
 const root2 = new Context()
 root2.plugin(TimerService)
-const registered2 = [], guards2 = []
+const registered2 = []
 class FakeTools2 extends Service {
   constructor(ctx) { super(ctx, 'tools') }
   register(def) { registered2.push(def.name); return () => { const i = registered2.indexOf(def.name); if (i >= 0) registered2.splice(i, 1) } }
-  guard(fn) { guards2.push(fn); return () => { const i = guards2.indexOf(fn); if (i >= 0) guards2.splice(i, 1) } }
 }
 root2.plugin(FakeTools2)
 await new Promise((r) => setTimeout(r, 30))
@@ -161,7 +157,6 @@ if (ctrl) {
 await fiber2.dispose()
 await new Promise((r) => setTimeout(r, 50))
 check('卸载后工具被注销', registered2.length === 0, `剩余 ${registered2.length}`)
-check('卸载后护栏被注销', guards2.length === 0, `剩余 ${guards2.length}`)
 
 // ── 6) 回归守卫：默认导出能被 ctx.plugin 直接装载 ───────────────────────────
 // 这一条是**真正的**防回归：Cordis 把插件 `apply` 的返回值当成 effect 解释，
@@ -172,7 +167,6 @@ root3.plugin(TimerService)
 class FakeTools3 extends Service {
   constructor(ctx) { super(ctx, 'tools') }
   register() { return () => {} }
-  guard() { return () => {} }
 }
 root3.plugin(FakeTools3)
 await new Promise((r) => setTimeout(r, 30))

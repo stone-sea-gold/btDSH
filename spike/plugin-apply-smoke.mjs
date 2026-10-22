@@ -31,11 +31,10 @@ const check = (label, cond, detail = '') => {
 console.log(`=== P3 插件级冒烟（DSH_HOME=${HOME}）===\n`)
 
 // ── 1) apply ────────────────────────────────────────────────────────────────
-const registered = [], guards = [], effects = []
+const registered = [], effects = []
 const ctx = {
   get: (n) => n === 'tools' ? {
     register: (d) => { registered.push(d.name); return () => {} },
-    guard: (g) => { guards.push(g); return () => {} },
   } : undefined,
   effect: (fn, label) => { effects.push(label); fn() },
   logger: { info: () => {} },
@@ -45,11 +44,8 @@ const report = setup(ctx, { dataDir: DATA, presetId: PRESET_ID })
 check('注册 31 个工具', registered.length === 31, `实际 ${registered.length}`)
 check('工具无重名', new Set(registered).size === registered.length)
 check('全部以 quant_ 前缀', registered.every((n) => n.startsWith('quant_')))
-check('安装 1 个护栏', guards.length === 1)
-check('护栏能拒绝全市场同步', typeof guards[0]({ name: 'quant_data_sync', arguments: { scope: 'all' } }) === 'string')
-check('护栏能拒绝"开启自动同步"', typeof guards[0]({ name: 'quant_autosync', arguments: { action: 'enable' } }) === 'string')
-check('护栏放行普通调用', guards[0]({ name: 'quant_factor_list', arguments: {} }) === undefined)
-check('注册了回收 effect', effects.some((l) => l.includes('tool')) && effects.some((l) => l.includes('guard')) && effects.some((l) => l.includes('store')))
+check('不装护栏（权限交给 DSH 的权限预设）', true)
+check('注册了回收 effect', effects.some((l) => l.includes('tool')) && effects.some((l) => l.includes('store')))
 check('报告含数据目录', report.dataDir === DATA, report.dataDir)
 // 惰性：apply 时仓库还不存在、自动同步默认关闭 → 不该因此建库
 check('apply 不建库（惰性）', !existsSync(join(DATA, 'quant.db')), existsSync(join(DATA, 'quant.db')) ? '被建出来了' : '')

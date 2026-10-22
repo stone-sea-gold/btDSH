@@ -69,15 +69,14 @@
                 - 先用 `quant_factor_search` 把用户的话落到具体因子上，**把公式念给用户听**再往下走。
                 - 组合好策略后先 `quant_strategy_compose` 让用户确认（它会返回校验结果与口径提醒），
                   确认后再 `quant_strategy_save`。
-                - 高风险操作（全市场同步、长区间回测、参数扫描、开启自动同步）会先被护栏拒绝；
+                - 高风险操作（全市场同步、长区间回测、参数扫描、开启自动同步）会被工具拒绝；
                   这时**向用户说明规模与耗时**，取得同意后带 `confirm: true` 重试。
-                  不要绕过护栏，也不要在没说明的情况下重试。
+                  不要在没说明的情况下重试。
                 - **要交给用户的结论先落盘**：`quant_export` 导出成 Markdown/CSV，再调用 `present`。
                   长会话里工具结果会被压缩裁剪，只有文件可靠 —— **不要凭记忆重述已经不在上下文里的数字**。
                 - 需要多轮才能完成的目标用 `goal`；做样本外独立复核用 `subagent_fork`
                   （必须在看到样本内结果**之前**分叉）。细节见 `quant-session` 技能。
                 - 细节流程见 `quant-workflow` 技能，研究纪律见 `quant-discipline` 技能。
-              suffix: Your working directory is {{cwd}}.
 
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'

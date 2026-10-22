@@ -1,6 +1,6 @@
 ---
 name: quant-workflow
-description: 量化任务的标准流程：一句话 → 因子检索 → 策略确认 → 回测 → 报告。含数据过期/自动同步、用户拒绝保存、审批护栏、结果导出四条分支的具体处理方式。做任何量化任务前读它。
+description: 量化任务的标准流程：一句话 → 因子检索 → 策略确认 → 回测 → 报告。含数据过期/自动同步、用户拒绝保存、工具前置校验、结果导出四条分支的具体处理方式。做任何量化任务前读它。
 ---
 
 # 标准工作流
@@ -38,7 +38,7 @@ quant_data_status
    > 不再每次问你；DSH 没运行时不会执行，但下次启动会补跑被错过的那一次。
    > 只同步本地已有的股票，不会自动扩大到全市场。
 
-3. **只有用户明确同意后**才调用（护栏会先拦一次，这是设计）：
+3. **只有用户明确同意后**才调用（工具会先拦一次，这是设计）：
 
    ```
    quant_autosync {action: "enable", at: "18:30", confirm: true}
@@ -104,9 +104,9 @@ quant_backtest_run {strategyId: "mom_monthly"}
 - 涨停不买、跌停不卖、停牌不交易（用**不复权原始价**判定）
 - T+1 制度、100 股整手、佣金（最低 5 元）/印花税（仅卖出）/过户费/滑点
 
-### 分支：审批护栏拒绝
+### 分支：工具拒绝
 
-高风险操作会被护栏拦下，返回 `APPROVAL_REQUIRED`：
+高风险操作会被工具拦下，返回 `APPROVAL_REQUIRED`：
 
 | 触发条件 | 工具 |
 |---|---|
@@ -117,7 +117,7 @@ quant_backtest_run {strategyId: "mom_monthly"}
 | **开启自动同步（长期授权）** | `quant_autosync {action:"enable"}` |
 
 正确处理：**向用户说明规模与耗时**，取得同意后带 `confirm: true` 重试。
-错误处理：绕过护栏、不说明就重试、或者假装没被拦。
+错误处理：绕过这一层、不说明就重试、或者假装没被拦。
 
 ### 分支：结果分析
 
@@ -199,7 +199,7 @@ present {files: [{path: "/.../quant-exports/backtest-20260928.md", description: 
 | 症状 | 原因 | 处理 |
 |---|---|---|
 | `NO_DATA` | 仓库为空或区间内无数据 | 先 `quant_data_status`，再决定是否同步 |
-| `APPROVAL_REQUIRED` | 触发了护栏 | 向用户说明后带 `confirm: true` 重试 |
+| `APPROVAL_REQUIRED` | 触发了工具的前置校验 | 向用户说明后带 `confirm: true` 重试 |
 | `TOPK_EXCEEDS_PANEL` | topK > 面板深度 | 提高 `topN` 重新物化 |
 | `PANEL_FAILED` | 因子公式编译不过 | 用 `quant_factor_preview` 定位 |
 | 回测开头一段无值 | 因子回看期长于可用数据 | 把 `start` 往后推，或声明这段为空 |

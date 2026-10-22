@@ -24,8 +24,6 @@
         presetId: quant-assistant
         # 数据目录；null = $DSH_QUANT_DATA_DIR 或 $DSH_HOME/quant/
         dataDir: null
-        # 关掉护栏（不推荐；只在明确知道自己在做什么时用）
-        guards: true
         # 关掉 preset 物化（例如你已经手工维护了一份）
         materializePreset: true
         # 窗口函数临时表落点：memory（默认，快）/ file（省内存，需可写临时目录）
