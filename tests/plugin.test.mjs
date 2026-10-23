@@ -37,6 +37,8 @@ function makeCtx() {
         register: (d) => { registered.push(d.name); return () => {} },
       } : undefined),
       effect: (fn, label) => { effects.push(label); fn() },
+      // 真实 Cordis 才有 inject；测试环境没有 webServer，所以不触发回调（路由另有单测）
+      inject: (deps, fn) => { /* no webServer in this fake ctx */ },
       logger: { info: () => {} },
     },
   }

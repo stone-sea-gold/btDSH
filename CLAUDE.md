@@ -60,6 +60,19 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## 5. 项目进度日志（必读、必维护）
+
+项目根目录的 `PROGRESS.md` 是**唯一**的进度事实来源。开工前先读它的「当前状态」与最近 2–3 条时间线，
+避免重复已否决的方案、重踩已记录的坑。
+
+**每次改动完成后（一个提交或一批相关改动），同一轮里完成两件事：**
+
+1. 时间线顶部追加一条：日期 · 版本/提交 · 做了什么 · 怎么验证 · 是否已发布。
+2. 刷新「当前状态」：版本、在做、待办、已知问题、测试数。
+
+只改代码没验证的，状态写「未提交/未验证」；新踩的坑必须进「已知问题与坑」。
+不要把进度写进 README 或散落在别处——两处真相就是没有真相。
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

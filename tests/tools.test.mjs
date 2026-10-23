@@ -282,6 +282,23 @@ test('同步估算：规模与审批标记随股票数增长', () => {
   store.close()
 })
 
+test('工具面：quant_data_sync 不传 from/to 时输出仍必须是 lossless JSON', async () => {
+  const { runtime, cleanup } = makeRuntime()
+  const t = dataTools(runtime).find((x) => x.name === 'quant_data_sync')
+  // 复现用户报的故障：args.from/args.to 为 undefined 时被写进 estimate，
+  // 宿主做 lossless JSON 校验 → "value is not lossless JSON"。
+  const v = await t.execute({ scope: 'all', estimateOnly: true }, {})
+  assert.equal(v.ok, true)
+  assert.ok(JSON.stringify(v) !== undefined)
+  assert.deepEqual(JSON.parse(JSON.stringify(v)), v, '输出含 undefined 会让整次调用被宿主拒绝')
+  assert.ok(Number.isInteger(v.estimate.from), 'estimate.from 必须是整数（默认 10 年前）')
+  assert.ok(Number.isInteger(v.estimate.to), 'estimate.to 必须是整数（默认今天）')
+  // 用工具自己声明的输出 schema 校验（宿主就是这么做的），而不是宽松的空壳 schema
+  const errs = validateValue(t.output.schema, v, 'value')
+  assert.deepEqual(errs, [])
+  cleanup()
+})
+
 test('工具面：presentationMeta 必须是 lossless JSON（DSH 会做快照校验，含 undefined/函数会抛）', async () => {
   const { runtime, cleanup } = makeRuntime()
   const tools = allTools(runtime)

@@ -632,9 +632,9 @@ fork 的价值不在并行，而在**独立性** —— 它继承历史到分叉
               └──────────────┬──────────────┘
                              │
         ┌────────────────────┴────────────────────┐
-   Phase 1                                    Phase 2（未实现）
+   Phase 1                                    Phase 2（v1.2 已实现）
    lib/dashboard/render.mjs                    同一份 JSON 由
-   → 单文件 HTML（内联 ECharts + 客户端脚本）   GET /quant/dashboard/:id 返回
+   → 单文件 HTML（内联 ECharts + 客户端脚本）   GET /quant/report/<id> 按需渲染
                              │
                     lib/dashboard/client-runtime.js
                     （loadModel 三源适配器：注入 / 内联 / fetch）
@@ -646,6 +646,17 @@ fork 的价值不在并行，而在**独立性** —— 它继承历史到分叉
 
 **持久化的小改动**：`caveats`、`skipped`(不可交易拒绝计数)、`rebalances` 随 `metrics` JSON 一起归档
 （无 schema 迁移；旧记录缺失时由模型按配置确定性重建）。
+
+**v1.2 的落地方式**：回测结束时把**模型 JSON**（不是 HTML 成品）写进 `reports` 表，
+渲染版本号 `DASHBOARD_RENDER_VERSION` 一并入库，改模板后旧记录可重新渲染。
+宿主侧两条只读路由（`lib/host/routes.mjs`，经 `ctx.inject(['webServer'])` 注册，headless 自动跳过）：
+
+- `GET /quant/api/runs?cwd=<path>` —— 回测清单（全部工作区 / 指定工作区两种视角）
+- `GET /quant/report/<id>` —— 单份报告页，**可分享的深链**；主区「回测」标签页只是它的 iframe
+
+工作区归属：`backtests`/`strategies`/`holdings` 加 `cwd` 列（schema v5，`ensureColumn` 幂等补列），
+另建 `workspaces` 登记表记录用过的目录。行情库仍在全局 `~/.dsh/quant/` —— 十年全市场是 GB 级，
+按工作区各存一份不可行。
 
 ## 9. 合规
 

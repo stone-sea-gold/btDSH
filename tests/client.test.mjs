@@ -27,6 +27,13 @@ const R = {
     }
     return { $$el: true, type, props: props || {}, children: children.filter((c) => c !== null && c !== undefined && c !== false) }
   },
+  // hooks 只做单次渲染所需的最小实现：不执行副作用（避免真发请求）
+  useState(init) { return [typeof init === 'function' ? init() : init, () => {}] },
+  useEffect() {},
+  useLayoutEffect() {},
+  useRef(v) { return { current: v } },
+  useMemo(fn) { return fn() },
+  useCallback(fn) { return fn },
 }
 
 /** 加载客户端产物：捕获 ModuleLoader 注册的 factory，再用 shim 执行它 */
@@ -90,6 +97,24 @@ const styleStr = (el) => {
   return Object.entries(s).map(([k, v]) => `${k}:${v}`).join(';')
 }
 
+test('客户端：「回测」视图页能渲染出工具条与两个原生下拉（防整页空白回归）', () => {
+  const { mod } = loadClient()
+  const View = mod.__views.BacktestView
+  assert.equal(typeof View, 'function', '视图页必须可渲染')
+
+  // 这一步就是抓“组件里引用了不存在的标识符”这类问题：整页空白正是这样来的
+  const tree = View({ cwd: '/tmp/ws' })
+  const els = collect(tree).map((x) => x.el)
+
+  const toolbar = els.find((e) => e.props.className === 'dq-toolbar')
+  assert.ok(toolbar, '缺少工具条')
+  const selects = els.filter((e) => e.type === 'select')
+  assert.equal(selects.length, 2, '应有工作区与回测两个原生下拉')
+  assert.deepEqual(selects.map((s) => s.props['aria-label']), ['工作区', '回测记录'])
+  assert.ok(selects.every((s) => s.props.className === 'dq-native'), '下拉必须套 dq-native 皮肤类')
+  assert.ok(els.some((e) => e.props.className === 'dq-empty'), '空态区块必须存在')
+})
+
 // ── 契约 ────────────────────────────────────────────────────────────────────
 
 test('客户端：产物走 ModuleLoader 契约，导出 apply / inject', () => {
@@ -97,10 +122,10 @@ test('客户端：产物走 ModuleLoader 契约，导出 apply / inject', () => 
   assert.equal(def.id, 'dsh-quant-assistant')
   assert.equal(typeof def.factory, 'function')
   assert.equal(typeof mod.apply, 'function')
-  assert.deepEqual(mod.inject, ['slots'])
+  assert.deepEqual(mod.inject, ['slots', 'sessions'], '视图页要从会话绑定里取 cwd，必须注入 sessions')
 })
 
-test('客户端：apply 注册 6 张工具卡 + 1 个设置页，键名与工具名一致', () => {
+test('客户端：apply 注册 6 张工具卡 + 1 个设置页 + 1 个回测视图，键名与工具名一致', () => {
   const { mod } = loadClient()
   const injections = []
   const registrations = []
@@ -109,14 +134,16 @@ test('客户端：apply 注册 6 张工具卡 + 1 个设置页，键名与工具
       inject: (slot, cb) => { injections.push(slot); cb() },
       register: (reg, Component) => { registrations.push({ reg, Component }); return () => {} },
     },
+    sessions: { binding: () => undefined },
   }
   mod.apply(ctx)
 
   assert.deepEqual(injections, [
     'tool.call.toolview', 'tool.call.toolview', 'tool.call.toolview',
-    'tool.call.toolview', 'tool.call.toolview', 'tool.call.toolview', 'settings.section',
+    'tool.call.toolview', 'tool.call.toolview', 'tool.call.toolview',
+    'settings.section', 'conversation.view',
   ])
-  assert.equal(registrations.length, 7)
+  assert.equal(registrations.length, 8)
 
   const toolviews = registrations.filter((r) => r.reg.name === 'tool.call.toolview')
   assert.deepEqual(toolviews.map((r) => r.reg.key).sort(), [
@@ -129,6 +156,33 @@ test('客户端：apply 注册 6 张工具卡 + 1 个设置页，键名与工具
   const settings = registrations.find((r) => r.reg.name === 'settings.section')
   assert.equal(settings.reg.id, 'quant-assistant')
   assert.equal(typeof settings.reg.label, 'string')
+})
+
+test('客户端：回测视图注册在 conversation.view，标签为「回测」并排在轨迹之后', () => {
+  const { mod } = loadClient()
+  const registrations = []
+  const ctx = {
+    slots: {
+      inject: (slot, cb) => cb(),
+      register: (reg, Component) => { registrations.push({ reg, Component }); return () => {} },
+    },
+    sessions: {
+      binding: (id) => (id === 's1'
+        ? { session: { header: { id: 's1', cwd: '/ws/a' } } }
+        : { get session() { throw new Error('gone') } }),
+    },
+  }
+  mod.apply(ctx)
+  const view = registrations.find((r) => r.reg.name === 'conversation.view')
+  assert.ok(view, '必须注册 conversation.view')
+  assert.equal(view.reg.id, 'quant-backtest')
+  assert.equal(view.reg.label, '回测')
+  assert.equal(view.reg.order, 20)
+  assert.equal(typeof view.Component, 'function')
+
+  // 注入面：正常会话拿到 cwd，会话已消失时退化为 null 而不是抛错
+  assert.deepEqual(view.reg.inject('s1'), { cwd: '/ws/a' })
+  assert.deepEqual(view.reg.inject('missing'), { cwd: null })
 })
 
 test('客户端：注册的 toolview 键必须与宿主侧真实工具名一致', async () => {
@@ -471,10 +525,22 @@ test('客户端：NavChart 在点数不足时给文案而不是空图', () => {
   }
 })
 
-test('客户端：不使用内联 style 之外的副作用（无 hooks、无 setState、无订阅）', () => {
+test('客户端：工具卡保持纯函数（无 hooks），只有回测视图页可以持有状态', () => {
   const src = readFileSync('lib/client.js', 'utf8')
-  // 组件必须是工具结果的纯函数：出现这些说明引入了状态或订阅，会在卡片重渲染时出问题
+  // 卡片是**工具结果的纯函数**：不订阅、不轮询、不持有状态。
+  // 主区视图页是常驻页面，必须自己取数并记住选中项，所以允许 hooks —— 但只允许在视图段里。
+  const marker = '主区「回测」视图页'
+  const cut = src.indexOf(marker)
+  assert.ok(cut > 0, '找不到视图页分段标记，测试需要随代码结构更新')
+  const cards = src.slice(0, cut)
   for (const banned of ['useState', 'useEffect', 'useRef', 'useMemo', 'subscribe(', 'setInterval', 'setTimeout']) {
-    assert.ok(!src.includes(banned), `客户端不应使用 ${banned}（卡片必须是纯函数）`)
+    assert.ok(!cards.includes(banned), `工具卡不应使用 ${banned}（卡片必须是纯函数）`)
   }
+  const view = src.slice(cut)
+  assert.ok(!view.includes('setInterval') && !view.includes('subscribe('), '视图页也只在用户操作时取数，不要引入轮询或订阅')
+  // 下拉必须保留**原生展开行为**（点击/键盘/滚动由浏览器负责）：只用原生 select，
+  // 选项栏皮肤通过 Chrome 135+ 的 ::picker(select) 定制，不支持时自动退回系统默认外观。
+  assert.ok(view.includes("h('select'"), '下拉必须是原生 select，展开行为交给浏览器')
+  assert.ok(view.includes("className: 'dq-native'"), '原生 select 需要套 dq-native 皮肤类')
+  assert.ok(!view.includes('function Dropdown('), '不要再引入自绘下拉（会改变展开方式）')
 })
