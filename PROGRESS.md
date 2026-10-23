@@ -34,7 +34,7 @@
 ### 待办（按顺序）
 
 1. 提交、打 tag `v1.2.0`、推送，并把本机 profile 换成正规安装（当前是手工拷贝的冒烟副本）
-2. `docs/dashboard-design.md` 还没补「视图页 / 路由 / 报告入库」三节（README 与 ARCHITECTURE 已更新）
+2. `docs/dashboard-design.md` 已补 §12 三节契约（视图页 / 路由 / 报告入库），与 README、ARCHITECTURE 一致
 
 ### 已知问题与坑
 

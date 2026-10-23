@@ -219,9 +219,107 @@ Phase 2 的唯一改动：HTML 顶部那段 bootstrap 里，`readModel()` 从"�
 
 **供应链**：字节进入用户拿到的 HTML，因此任何替换都不可静默接受 —— 哈希不匹配时脚本**直接失败**。
 
-## 12. Phase 2 接入清单（到时只做这些）
+## 12. Phase 2 落地契约（v1.2）
 
-1. 宿主半：`ctx.webServer.register({ kind: 'prefix', path: '/quant/dashboard' })` 返回**同一个** model JSON
-2. 客户端：`ctx.sidebarRight.openTab(...)` 打开看板；或注册自有 `sidebar.right.pane.tab` 内嵌 iframe
-3. 页面：设置 `data-model-src`（或注入 `window.__DASHBOARD_MODEL__`）—— `client-runtime.js` 的 `loadModel()` 已支持，**渲染代码零改动**
-4. 对比视图：调用已就绪的 `buildCompareDashboard([...])`，渲染器已支持多 run（指标对比表 + 多条曲线 + 图例）
+> 本节替代开工前的「Phase 2 接入清单」。原计划是 `/quant/dashboard` 单前缀路由 +
+> `sidebarRight.openTab` / 自有右侧栏 tab；实际落地改了三处，原因见 §12.0。
+> 下面三节是**已实现的契约**，改实现前先改这里。§3 末段仍保留开工前的
+> `/quant/dashboard` + 侧栏 tab 表述，那部分以本节为准。
+
+### 12.0 为什么改道
+
+1. **外壳改成主区标签页。** 右侧栏的 `sidebar.right.pane.tab` 是官方包自用的槽位，第三方是否稳定未经验证；
+   而 `conversation.view` 是官方**开放的 list slot**，注册即多一个标签页，且主区宽度更适合看图表。
+2. **路由拆成两条。** 单前缀 `/quant/dashboard/:id` 无法同时表达"清单"和"单份报告"；
+   拆成 `/quant/api/runs`（JSON 清单）与 `/quant/report/<id>`（HTML 资源）后，路径即资源类型，
+   鉴权、缓存、错误码都能分别定。
+3. **报告存模型而不是 HTML。** 单份 HTML 内联 ECharts 后 664 KB，几十条回测就是几十 MB，
+   且模板一改旧文件全部过时；模型 JSON 只有几 KB～几十 KB，渲染推迟到打开时。
+
+### 12.1 视图页契约
+
+**注册面**（`lib/client.js` 的 `apply()`）：
+
+| 项 | 值 |
+|---|---|
+| slot | `conversation.view`（kind list、scope session、owner `ConvViewOwnerProps`） |
+| `id` | `quant-backtest` |
+| `order` | `20`（对话 `0`、轨迹 `10` 之后） |
+| `label` | `回测` |
+| `inject(sessionId)` | `{ cwd }`，取 `ctx.sessions.binding(sessionId)?.session?.header?.cwd`；取不到给 `null` |
+
+**取数**：唯一数据源是 `GET /quant/api/runs`。默认带当前会话的 `cwd`；用户切到「全部工作区」时不带参数。
+
+**选中语义**（写死，不做"记住上次"）：
+
+- 默认选中列表第一条 —— 服务端按 `created_at DESC` 返回，第一条即**最新**；
+- 切换工作区、或当前选中项不在新列表里 → 回退第一条；
+- 列表为空 → 空态，提示"先在对话里跑一次回测"。
+
+**渲染**：`<iframe src="/quant/report/<backtestId>">`。页面里嵌的 iframe 与「新标签页打开」是**同一个 URL**，
+这就是深链——发给别人也能直接看。
+
+**三态与错误**：加载中 / 失败（显示 HTTP 状态与原因）/ 空。失败不自动重试，只给「重试」按钮。
+
+**与工具卡的区别**：工具卡是工具结果的**纯函数**（无 hooks、无请求、不订阅）；
+视图页是常驻页面，允许 hooks 与 `fetch`，但**只读**——不得写库、不得触发回测。
+
+**样式**：注入 `#dsh-quant-view-style` 一份只属于本视图的样式表；颜色只用 `--dsw-alias-*` 设计变量，
+明暗主题自动跟随。下拉用**原生 `<select>`**（点击/键盘/滚动都交给浏览器），
+只在支持 Customizable Select 的浏览器（Chrome 135+）里用 `::picker(select)` 定制选项栏皮肤；
+不支持的浏览器退回系统默认，不引入自绘下拉。
+
+### 12.2 宿主路由契约
+
+**注册**：`ctx.inject(['webServer'], ...)`。headless / CLI 会话没有 `webServer` 服务 → 整段跳过，
+插件其余功能不受影响；disposer 挂在 `webCtx.effect()` 上，停用插件即注销。
+
+**鉴权**：先问宿主 `connection.requestRejection(req)`，返回 `401`/`403` 直接拒；没有 `connection` 服务时
+退化为不校验（宿主仍只绑 `127.0.0.1`）。
+
+**`GET /quant/api/runs?cwd=<绝对路径>`**
+
+- `200` JSON：`{ ok: true, workspaces: [{ path, title, last_used_at }], runs: [...] }`
+- `runs[]` 字段：`backtestId`、`strategyId`、`name`（策略名，缺失退化 `strategyId`，再退化「未命名策略」）、
+  `description`、`cwd`、`createdAt`、`hasReport`（该回测是否已入库报告）、`href`（`/quant/report/<id>`）
+- 排序 `created_at DESC`，上限 200 条；不带 `cwd` = 全部工作区
+- 只读：纯 SELECT
+
+**`GET /quant/report/<backtestId>`**
+
+| 状态 | 条件 |
+|---|---|
+| `200 text/html` | 正常，`cache-control: no-store` |
+| `400 bad report id` | id 不匹配 `^[A-Za-z0-9_-]{1,120}$`（防路径穿越） |
+| `404 report not found` | 既没有入库报告，也没有对应回测记录 |
+| `500 asset load failed` | vendored ECharts 或运行时缺失（安装损坏） |
+
+读取优先级：先 `store.getReport(id)` 用入库模型；没有则用回测记录 `buildBacktestDashboard(record, { source: 'route' })`
+**现场构建**（兼容 v1.2 之前的历史回测）。现场构建的结果**不回填**——读请求不产生写。
+
+### 12.3 报告入库契约
+
+**表 `reports`**（schema v5，`WITHOUT ROWID`）：
+
+```
+backtest_id TEXT PRIMARY KEY, model TEXT NOT NULL,
+schema_version INTEGER NOT NULL, render_version INTEGER NOT NULL,
+cwd TEXT, created_at INTEGER
+```
+
+`saveReport` 用 `INSERT OR REPLACE`：同一 `backtestId` 重跑即覆盖。
+
+**存什么**：`buildBacktestDashboard()` 产出的**模型 JSON**（与内联 HTML 里的是同一份），不是 HTML 成品。
+
+**两个版本号**：
+
+- `schema_version` = 模型契约版本（`DASHBOARD_SCHEMA_VERSION`，当前 `1`）；
+- `render_version` = 渲染器版本（`DASHBOARD_RENDER_VERSION`，当前 `1`）。
+  渲染行为变了就 `+1`；读取方可据此判断"这份报告是旧渲染器产的"，决定重渲染或提示。
+
+**写入时机**：`quant_backtest_run` 成功后由 `storeBacktestReport()` 写；回测失败不写。
+记录里同时保留 `cwd` 归属，视图页才能按工作区过滤。
+
+**容量**：模型几 KB～几十 KB（净值曲线按 500 点抽稀），不随 HTML 模板膨胀。
+
+**升级路径**：改渲染器不动数据；改模型 schema 需迁移或按 `schema_version` 分支渲染。
